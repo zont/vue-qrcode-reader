@@ -45,7 +45,7 @@
     "vue-template-compiler": "^2.5.17"
   },
   "dependencies": {
-    "jsqr": "^1.1.1",
+    "qrcode-reader": "^1.0.4",
     "webrtc-adapter": "^6.3.2"
   }
 }

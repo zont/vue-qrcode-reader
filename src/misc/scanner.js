@@ -1,10 +1,13 @@
 import 'webrtc-adapter';
-import jsQR from 'jsqr';
+import QrCode from 'qrcode-reader';
+
+const qr = new QrCode();
 
 export function scan(imageData) {
-  const result = jsQR(imageData.data, imageData.width, imageData.height);
-
-  return { content: result === null ? null : result.data };
+  return new Promise(resolve => {
+    qr.callback = (err, value) => resolve({ content: err ? null : value.result });
+    qr.decode(imageData);
+  });
 }
 
 export function keepScanning(camera, options) {
