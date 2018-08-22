@@ -1,343 +1,106 @@
-<template lang="html">
+<template>
   <div class="qrcode-reader">
-    <div class="qrcode-reader__inner-wrapper">
-      <div
-        class="qrcode-reader__overlay"
-        @drop.prevent.stop="onDrop"
-        @dragover.prevent.stop
-        @dragenter.prevent.stop
-        @dragleave.prevent.stop
-      >
-        <slot></slot>
-      </div>
-
-      <canvas
-        ref="trackingLayer"
-        class="qrcode-reader__tracking-layer"
-      ></canvas>
-
-      <video
-        ref="video"
-        class="qrcode-reader__camera"
-      ></video>
-    </div>
+    <video ref="video"></video>
+    <slot />
   </div>
 </template>
 
 <script>
-import * as Scanner from '../misc/scanner.js'
-import Camera from '../misc/camera.js'
-import { imageDataFromFile, imageDataFromUrl } from '../misc/image-data.js'
-import isBoolean from 'lodash/isBoolean'
+  import * as Scanner from '../misc/scanner.js';
+  import Camera from '../misc/camera.js';
+  import { imageDataFromFile } from '../misc/image-data.js';
 
-export default {
-  props: {
-    paused: {
-      type: Boolean,
-      default: false,
-    },
-
-    videoConstraints: {
-      type: [Object, Boolean],
-      default: () => ({}), // empty object
-    },
-
-    track: {
-      type: [Function, Boolean],
-      default: true,
-    },
-  },
-
-  data () {
-    return {
-      camera: null,
-      destroyed: false,
-      readyAfterPause: true,
-    }
-  },
-
-  computed: {
-
-    shouldScan () {
-      return this.paused === false &&
-        this.camera !== null &&
-        this.destroyed === false &&
-        this.readyAfterPause
-    },
-
-    /**
-     * Minimum delay in milliseconds between frames to be scanned. Don't scan
-     * so often when visual tracking is disabled to improve performance.
-     */
-    scanInterval () {
-      if (this.track === false) {
-        return 500
-      } else {
-        return 40 // ~ 25fps
+  export default {
+    props: {
+      paused: {
+        type: Boolean,
+        default: false
       }
     },
 
-    /**
-     * Full constraints object which is passed to `getUserMedia` to request a
-     * camera stream. Properties define if a certain camera is adequate or not.
-     */
-    constraints () {
-      let withDefaults
-
-      if (isBoolean(this.videoConstraints)) {
-        withDefaults = this.videoConstraints
-      } else {
-        withDefaults = {
-          facingMode: { ideal: 'environment' },
-          width: { min: 360, ideal: 640, max: 1920 },
-          height: { min: 240, ideal: 480, max: 1080 },
-
-          ...this.videoConstraints,
-        }
-      }
-
-      return {
-        audio: false,
-        video: withDefaults,
-      }
+    data() {
+      return { camera: null, readyAfterPause: true };
     },
 
-    trackRepaintFunction () {
-      if (this.track === true) {
-        return function (location, ctx) {
-          if (location !== null) {
-            const {
-              topLeftCorner,
-              topRightCorner,
-              bottomLeftCorner,
-              bottomRightCorner,
-            } = location
-
-            ctx.strokeStyle = 'red'
-
-            ctx.beginPath()
-            ctx.moveTo(topLeftCorner.x, topLeftCorner.y)
-            ctx.lineTo(bottomLeftCorner.x, bottomLeftCorner.y)
-            ctx.lineTo(bottomRightCorner.x, bottomRightCorner.y)
-            ctx.lineTo(topRightCorner.x, topRightCorner.y)
-            ctx.lineTo(topLeftCorner.x, topLeftCorner.y)
-            ctx.closePath()
-
-            ctx.stroke()
-          }
-        }
-      } else if (this.track === false) {
-        return null
-      } else {
-        return this.track
-      }
-    },
-
-  },
-
-  watch: {
-    /**
-     * Starts continuous scanning process as soon as conditions for that are
-     * fullfilled. The process stops itself automatically when the conditions
-     * are not fullfilled anymore.
-     */
-    shouldScan (shouldScan) {
-      if (shouldScan) {
-        this.startScanning()
-      }
-    },
-
-    paused (paused) {
-      const video = this.$refs.video
-
-      if (paused) {
-        video.pause()
-
-        this.readyAfterPause = false
-      } else {
-        video.play()
-
-        video.addEventListener(
-          'timeupdate',
-          () => { this.readyAfterPause = true },
-          { once: true }
-        )
-      }
-    },
-
-    constraints: {
-      deep: true,
-
-      handler () {
-        this.$emit('init', this.init())
+    computed: {
+      shouldScan() {
+        return this.paused === false && this.camera !== null && this.readyAfterPause;
       },
-    },
-  },
 
-  mounted () {
-    this.$emit('init', this.init())
-  },
-
-  beforeDestroy () {
-    if (this.camera !== null) {
-      this.camera.stop()
-    }
-
-    this.destroyed = true
-  },
-
-  methods: {
-
-    async init () {
-      if (this.camera !== null) {
-        this.camera.stop()
-      }
-
-      if (this.videoConstraints === false) {
-        this.camera = null
-      } else {
-        this.camera = await Camera(this.constraints, this.$refs.video)
+      constraints() {
+        return {
+          audio: false,
+          video: {
+            facingMode: { ideal: 'environment' },
+            width: { min: 360, ideal: 640, max: 1920 },
+            height: { min: 240, ideal: 480, max: 1080 }
+          }
+        };
       }
     },
 
-    startScanning () {
-      Scanner.keepScanning(this.camera, {
-        locateHandler: this.onLocate,
-        detectHandler: scanResult => this.onDetect('stream', scanResult),
-        shouldContinue: () => this.shouldScan,
-        minDelay: this.scanInterval,
-      })
-    },
-
-    onLocate (location) {
-      if (this.trackRepaintFunction !== null) {
-        this.repaintTrack(location)
-      }
-    },
-
-    async onDetect (source, promise) {
-      this.$emit('detect', (async () => {
-        const data = await promise
-
-        return { source, ...data }
-      })())
-
-      try {
-        const { content } = await promise
-
-        if (content !== null) {
-          this.$emit('decode', content)
+    watch: {
+      shouldScan(shouldScan) {
+        if (shouldScan) {
+          this.startScanning();
         }
-      } catch (error) {
-        // fail silently
+      },
+
+      paused(paused) {
+        const video = this.$refs.video;
+
+        if (paused) {
+          video.pause();
+          this.readyAfterPause = false;
+        } else {
+          video.play();
+          video.addEventListener('timeupdate', () => this.readyAfterPause = true, { once: true });
+        }
       }
     },
 
-    onDrop ({ dataTransfer }) {
-      const droppedFiles = [...dataTransfer.files]
+    mounted() {
+      if (this.camera !== null) {
+        this.camera.stop();
+      }
 
-      droppedFiles.forEach(this.onDropFile)
+      this.$emit('init', Camera(this.constraints, this.$refs.video).then(camera => this.camera = camera));
+    },
 
-      const droppedUrl = dataTransfer.getData('text')
-
-      if (droppedUrl !== '') {
-        this.onDropUrl(droppedUrl)
+    beforeDestroy() {
+      if (this.camera !== null) {
+        this.camera.stop();
+        this.camera = null;
       }
     },
 
-    async onDropFile (file) {
-      this.onDetect('file', (async () => {
-        const imageData = await imageDataFromFile(file)
-        const scanResult = Scanner.scan(imageData)
+    methods: {
+      startScanning() {
+        Scanner.keepScanning(this.camera, {
+          detectHandler: scanResult => this.$emit('detect', Promise.resolve(scanResult)),
+          shouldContinue: () => this.shouldScan
+        });
+      },
 
-        return scanResult
-      })())
-    },
-
-    async onDropUrl (url) {
-      this.onDetect('url', (async () => {
-        const imageData = await imageDataFromUrl(url)
-        const scanResult = Scanner.scan(imageData)
-
-        return scanResult
-      })())
-    },
-
-    /**
-     * The coordinates are based on the original camera resolution but the
-     * video element is responsive and scales with space available. Therefore
-     * the coordinates are re-calculated to be relative to the video element.
-     */
-    normalizeLocation (location) {
-      if (location === null) {
-        return null
-      } else {
-        const widthRatio = this.camera.displayWidth / this.camera.resolutionWidth
-        const heightRatio = this.camera.displayHeight / this.camera.resolutionHeight
-
-        const normalizeEntry = ({ x, y }) => ({
-          x: Math.floor(x * widthRatio),
-          y: Math.floor(y * heightRatio),
-        })
-
-        const joinObjects = (objA, objB) => ({ ...objA, ...objB })
-
-        return Object.entries(location)
-          .map(([ key, val ]) => ({ [key]: normalizeEntry(val) }))
-          .reduce(joinObjects, {})
+      scanFile(file) {
+        this.$emit('detect', imageDataFromFile(file).then(imageData => Scanner.scan(imageData)));
       }
-    },
-
-    repaintTrack (location) {
-      location = this.normalizeLocation(location)
-
-      const canvas = this.$refs.trackingLayer
-      const ctx = canvas.getContext('2d')
-
-      canvas.width = this.camera.displayWidth
-      canvas.height = this.camera.displayHeight
-
-      window.requestAnimationFrame(
-        () => this.trackRepaintFunction(location, ctx)
-      )
-    },
-
-  },
-}
+    }
+  };
 </script>
 
-<style lang="css">
-.qrcode-reader {
-  display: flex;
-  flex-flow: row nowrap;
-  justify-content: space-around;
-  align-items: center;
-}
+<style>
+  .qrcode-reader {
+    position: relative;
+    width: 100%;
+    height: 100%;
+  }
 
-.qrcode-reader__inner-wrapper {
-  position: relative;
-}
-
-.qrcode-reader__camera {
-  display: block;
-  object-fit: contain;
-  max-width: 100%;
-  max-height: 100%;
-  z-index: 10;
-}
-
-.qrcode-reader__overlay,
-.qrcode-reader__tracking-layer {
-  position: absolute;
-  width: 100%;
-  height: 100%;
-}
-
-.qrcode-reader__overlay {
-  z-index: 30;
-}
-
-.qrcode-reader__tracking-layer {
-  z-index: 20;
-}
+  .qrcode-reader video {
+    position: absolute;
+    left: 0;
+    top: 0;
+    width: 100%;
+    height: 100%;
+  }
 </style>

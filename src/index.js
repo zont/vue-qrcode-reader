@@ -1,32 +1,25 @@
-import QrcodeReader from './components/QrcodeReader.vue'
+import QrcodeReader from './components/QrcodeReader.vue';
 
 // Install the components
-export function install (Vue) {
-  Vue.component('qrcode-reader', QrcodeReader)
+export function install(Vue) {
+  Vue.component('qrcode-reader', QrcodeReader);
 }
 
 // Expose the components
-export { QrcodeReader }
-
-/* -- Plugin definition & Auto-install -- */
-/* You shouldn't have to modify the code below */
+export { QrcodeReader };
 
 // Plugin
-const plugin = {
-  /* eslint-disable no-undef */
-  version: VERSION,
-  install,
-}
-
-export default plugin
+const plugin = { install };
+export default plugin;
 
 // Auto-install
-let GlobalVue = null
+let GlobalVue = null;
 if (typeof window !== 'undefined') {
-  GlobalVue = window.Vue
+  GlobalVue = window.Vue;
 } else if (typeof global !== 'undefined') {
-  GlobalVue = global.Vue
+  GlobalVue = global.Vue;
 }
+
 if (GlobalVue) {
-  GlobalVue.use(plugin)
+  GlobalVue.use(plugin);
 }

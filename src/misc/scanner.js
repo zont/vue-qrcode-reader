@@ -1,64 +1,30 @@
-import 'webrtc-adapter'
-import jsQR from 'jsqr'
+import 'webrtc-adapter';
+import jsQR from 'jsqr';
 
-export function scan (imageData) {
-  const { data, width, height } = imageData
-  const result = jsQR(data, width, height)
+export function scan(imageData) {
+  const result = jsQR(imageData.data, imageData.width, imageData.height);
 
-  let content, location
-
-  if (result === null) {
-    content = null
-    location = null
-  } else {
-    content = result.data
-    location = result.location
-  }
-
-  return { content, location, imageData }
+  return { content: result === null ? null : result.data };
 }
 
-/**
- * Continuously extracts frames from camera stream and tries to read
- * potentially pictured QR codes.
- */
-export function keepScanning (camera, options) {
-  const {
-    locateHandler,
-    detectHandler,
-    shouldContinue,
-    minDelay,
-  } = options
+export function keepScanning(camera, options) {
+  const { detectHandler, shouldContinue } = options;
 
-  let contentBefore = null
-  let locationBefore = null
-  let lastScanned = performance.now()
+  let contentBefore = null;
 
   const processFrame = () => {
     if (shouldContinue()) {
-      window.requestAnimationFrame(processFrame)
+      window.requestAnimationFrame(processFrame);
 
-      const timeNow = performance.now()
+      const result = scan(camera.captureFrame());
 
-      if (timeNow - lastScanned >= minDelay) {
-        lastScanned = timeNow
-
-        const imageData = camera.captureFrame()
-        const { content, location } = scan(imageData)
-
-        if (content !== contentBefore && content !== null) {
-          detectHandler({ content, location, imageData })
-        }
-
-        if (location !== locationBefore) {
-          locateHandler(location)
-        }
-
-        contentBefore = content || contentBefore
-        locationBefore = location
+      if (result.content !== contentBefore && result.content !== null) {
+        detectHandler(result);
       }
-    }
-  }
 
-  processFrame()
+      contentBefore = result.content || contentBefore;
+    }
+  };
+
+  processFrame();
 }
